@@ -365,7 +365,7 @@ typedef void (__cdecl *win_sparkle_error_callback_t)();
 WIN_SPARKLE_API void __cdecl win_sparkle_set_error_callback(win_sparkle_error_callback_t callback);
 
 /// Callback type for win_sparkle_can_shutdown_callback()
-typedef int (__cdecl *win_sparkle_can_shutdown_callback_t)();
+typedef int (__cdecl *win_sparkle_can_shutdown_callback_t)(const int defaultValue);
 
 /**
     Set callback for querying the application if it can be closed.
@@ -410,7 +410,7 @@ typedef void (__cdecl *win_sparkle_shutdown_request_callback_t)();
 WIN_SPARKLE_API void __cdecl win_sparkle_set_shutdown_request_callback(win_sparkle_shutdown_request_callback_t);
 
 /// Callback type for win_sparkle_did_find_update_callback()
-typedef void(__cdecl *win_sparkle_did_find_update_callback_t)();
+typedef void(__cdecl *win_sparkle_did_find_update_callback_t)(const char* version);
 
 /**
     Set callback to be called when the updater did find an update.
@@ -518,7 +518,7 @@ typedef int(__cdecl* win_sparkle_user_run_installer_callback_t)(const wchar_t *)
 
 /**
     Set callback to be called when the update payload is
-    downloaded and read to be executed.or handled in some
+    downloaded and ready to be executed or handled in some
     other manner.
 
     The callback returns:
@@ -603,6 +603,16 @@ WIN_SPARKLE_API void __cdecl win_sparkle_check_update_with_ui_and_install();
     @see win_sparkle_check_update_with_ui()
  */
 WIN_SPARKLE_API void __cdecl win_sparkle_check_update_without_ui();
+
+/**
+    TODO
+ */
+WIN_SPARKLE_API void __cdecl win_sparkle_check_update_in_background();
+
+/**
+    TODO
+ */
+WIN_SPARKLE_API void __cdecl win_sparkle_resume_update();
 
 //@}
 

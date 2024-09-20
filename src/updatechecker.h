@@ -60,11 +60,15 @@ public:
     static int CompareVersions(const std::string& a, const std::string& b);
 
 protected:
+
     /// Should give version be ignored?
     virtual bool ShouldSkipUpdate(const Appcast& appcast) const;
 
     /// Should we install the update or prompt the user for options first?
     virtual bool ShouldAutomaticallyInstall() const { return false; }
+
+    /// Should bypass UI?
+    virtual bool ShouldInstallSilently() const { return false; };
 
 protected:
     virtual void PerformUpdateCheck();
@@ -113,6 +117,23 @@ public:
 
 protected:
     virtual bool ShouldAutomaticallyInstall() const { return true; };
+};
+
+
+/**
+    Update checker used to automatically install updates when found.
+ */
+class BackgroundUpdateChecker : public PeriodicUpdateChecker
+{
+public:
+    /// Creates checker thread.
+    BackgroundUpdateChecker() : PeriodicUpdateChecker() {}
+
+protected:
+    virtual bool ShouldAutomaticallyInstall() const { return true; };
+    virtual bool ShouldInstallSilently() const { return true;  }
+    //  TODOD: remove ShouldSkipUpdate override after tests
+    virtual bool ShouldSkipUpdate(const Appcast& appcast) const { return false; };
 };
 
 

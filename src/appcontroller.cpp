@@ -42,12 +42,12 @@ win_sparkle_update_postponed_callback_t    ApplicationController::ms_cbUpdatePos
 win_sparkle_update_dismissed_callback_t    ApplicationController::ms_cbUpdateDismissed = NULL;
 win_sparkle_user_run_installer_callback_t  ApplicationController::ms_cbUserRunInstaller = NULL;
 
-bool ApplicationController::IsReadyToShutdown()
+bool ApplicationController::IsReadyToShutdown(bool isSilentUpdate)
 {
     {
         CriticalSectionLocker lock(ms_csVars);
         if ( ms_cbIsReadyToShutdown )
-            return (*ms_cbIsReadyToShutdown)() == 0 ? false : true;
+            return (*ms_cbIsReadyToShutdown)(isSilentUpdate ? 0 : 1) == 0 ? false : true;
     }
 
     // default implementations:
@@ -83,13 +83,13 @@ void ApplicationController::NotifyUpdateError()
     }
 }
 
-void ApplicationController::NotifyUpdateFound()
+void ApplicationController::NotifyUpdateFound(std::string version)
 {
     {
         CriticalSectionLocker lock(ms_csVars);
         if (ms_cbDidFindUpdate)
         {
-            (*ms_cbDidFindUpdate)();
+            (*ms_cbDidFindUpdate)(version.c_str());
             return;
         }
     }

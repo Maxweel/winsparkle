@@ -155,6 +155,7 @@ struct EventPayload
     size_t       sizeDownloaded, sizeTotal;
     std::wstring updateFile;
     bool         installAutomatically;
+    bool         installSilently;
     ErrorCode    error;
 };
 
@@ -420,17 +421,19 @@ public:
     // changes state into "checking for updates"
     void StateCheckingUpdates();
     // change state into "no updates found"
-    void StateNoUpdateFound(bool installAutomatically);
+    void StateNoUpdateFound(bool installAutomatically, bool installSilently);
     // change state into "update error"
     void StateUpdateError(ErrorCode err);
     // change state into "a new version is available"
-    void StateUpdateAvailable(const Appcast& info, bool installAutomatically);
+    void StateUpdateAvailable(const Appcast& info, bool installAutomatically, bool installSilently);
     // change state into "downloading update"
     void StateDownloading();
     // update download progress
     void DownloadProgress(size_t downloaded, size_t total);
     // change state into "update downloaded"
     void StateUpdateDownloaded(const std::wstring& updateFile, const std::string &installerArguments);
+    //  Resume a downlaoded update
+    void ResumeUpdate();
 
 private:
     void EnablePulsing(bool enable);
@@ -478,6 +481,8 @@ private:
     UpdateDownloader* m_downloader;
     // whether the update should be installed without prompting the user
     bool m_installAutomatically;
+    // whether the update should be installed silently in the background
+    bool m_installSilently;
     // whether an error occurred (used to properly call NotifyUpdateCancelled)
     bool m_errorOccurred;
 
@@ -491,6 +496,7 @@ UpdateDialog::UpdateDialog()
       m_downloader(NULL)
 {
     m_installAutomatically = false;
+    m_installSilently = false;
     m_errorOccurred = false;
 
     m_heading = new wxStaticText(this, wxID_ANY, "");
@@ -649,7 +655,10 @@ void UpdateDialog::OnInstall(wxCommandEvent&)
     }
     else if ( m_downloader == NULL )
     {
-        StateDownloading();
+        if (!m_installSilently)
+        {
+            StateDownloading();
+        }
 
         // Run the download in background.
         m_downloader = new UpdateDownloader(m_appcast);
@@ -659,14 +668,17 @@ void UpdateDialog::OnInstall(wxCommandEvent&)
 
 void UpdateDialog::OnRunInstaller(wxCommandEvent&)
 {
-    if( !ApplicationController::IsReadyToShutdown() )
+    if( !ApplicationController::IsReadyToShutdown(m_installSilently) )
     {
-        wxMessageDialog dlg(this,
-                            wxString::Format(_("%s cannot be restarted."), Settings::GetAppName()),
-                            _("Software Update"),
-                            wxOK | wxOK_DEFAULT | wxICON_EXCLAMATION);
-        dlg.SetExtendedMessage(_("Make sure that you don't have any unsaved documents and try again."));
-        dlg.ShowModal();
+        if (!m_installSilently)
+        {
+            wxMessageDialog dlg(this,
+                wxString::Format(_("%s cannot be restarted."), Settings::GetAppName()),
+                _("Software Update"),
+                wxOK | wxOK_DEFAULT | wxICON_EXCLAMATION);
+            dlg.SetExtendedMessage(_("Make sure that you don't have any unsaved documents and try again."));
+            dlg.ShowModal();
+        }
         return;
     }
 
@@ -751,9 +763,10 @@ void UpdateDialog::StateCheckingUpdates()
 }
 
 
-void UpdateDialog::StateNoUpdateFound(bool installAutomatically)
+void UpdateDialog::StateNoUpdateFound(bool installAutomatically, bool installSilently)
 {
     m_installAutomatically = installAutomatically;
+    m_installSilently = installSilently;
 
     if ( m_installAutomatically )
     {
@@ -834,12 +847,13 @@ void UpdateDialog::StateUpdateError(ErrorCode err)
 
 
 
-void UpdateDialog::StateUpdateAvailable(const Appcast& info, bool installAutomatically)
+void UpdateDialog::StateUpdateAvailable(const Appcast& info, bool installAutomatically, bool installSilently)
 {
     m_appcast = info;
     m_installAutomatically = installAutomatically;
+    m_installSilently = installSilently;
 
-    if ( installAutomatically )
+    if (m_installAutomatically)
     {
         wxCommandEvent nullEvent;
         OnInstall(nullEvent);
@@ -997,6 +1011,17 @@ void UpdateDialog::StateUpdateDownloaded(const std::wstring& updateFile, const s
 }
 
 
+void UpdateDialog::ResumeUpdate()
+{
+    m_installSilently = false;
+
+    if (m_updateFile)
+    {
+        RunInstaller();
+    }
+}
+
+
 void UpdateDialog::ShowReleaseNotes(const Appcast& info)
 {
     if ( !m_webBrowser )
@@ -1124,6 +1149,9 @@ const int MSG_UPDATE_DOWNLOADED = wxNewId();
 // Tell the UI to ask for permission to check updates
 const int MSG_ASK_FOR_PERMISSION = wxNewId();
 
+// Tell the UI to resume a downloaded update
+const int MSG_RESUME_UPDATE = wxNewId();
+
 
 /*--------------------------------------------------------------------------*
                                 Application
@@ -1153,6 +1181,7 @@ private:
     void OnDownloadProgress(wxThreadEvent& event);
     void OnUpdateDownloaded(wxThreadEvent& event);
     void OnAskForPermission(wxThreadEvent& event);
+    void OnResumeUpdate(wxThreadEvent& event);
 
 private:
     UpdateDialog *m_win;
@@ -1188,6 +1217,7 @@ App::App()
     Bind(wxEVT_COMMAND_THREAD, &App::OnDownloadProgress, this, MSG_DOWNLOAD_PROGRESS);
     Bind(wxEVT_COMMAND_THREAD, &App::OnUpdateDownloaded, this, MSG_UPDATE_DOWNLOADED);
     Bind(wxEVT_COMMAND_THREAD, &App::OnAskForPermission, this, MSG_ASK_FOR_PERMISSION);
+    Bind(wxEVT_COMMAND_THREAD, &App::OnResumeUpdate, this, MSG_RESUME_UPDATE);
 }
 
 
@@ -1296,7 +1326,7 @@ void App::OnNoUpdateFound(wxThreadEvent& event)
     if ( m_win )
     {
         EventPayload payload(event.GetPayload<EventPayload>());
-        m_win->StateNoUpdateFound(payload.installAutomatically);
+        m_win->StateNoUpdateFound(payload.installAutomatically, payload.installSilently);
     }
 }
 
@@ -1334,9 +1364,12 @@ void App::OnUpdateAvailable(wxThreadEvent& event)
     InitWindow();
 
     EventPayload payload(event.GetPayload<EventPayload>());
-    m_win->StateUpdateAvailable(payload.appcast, payload.installAutomatically);
+    m_win->StateUpdateAvailable(payload.appcast, payload.installAutomatically, payload.installSilently);
 
-    ShowWindow();
+    if (!payload.installSilently)
+    {
+        ShowWindow();
+    }
 }
 
 
@@ -1352,6 +1385,15 @@ void App::OnAskForPermission(wxThreadEvent& event)
         // same as in win_sparkle_init()
         UpdateChecker *check = new PeriodicUpdateChecker();
         check->Start();
+    }
+}
+
+
+void App::OnResumeUpdate(wxThreadEvent& event)
+{
+    if (m_win)
+    {
+        m_win->ResumeUpdate();
     }
 }
 
@@ -1466,7 +1508,7 @@ void UI::ShutDown()
 
 
 /*static*/
-void UI::NotifyNoUpdates(bool installAutomatically)
+void UI::NotifyNoUpdates(bool installAutomatically, bool installSilently)
 {
     ApplicationController::NotifyUpdateNotFound();
 
@@ -1477,19 +1519,21 @@ void UI::NotifyNoUpdates(bool installAutomatically)
 
     EventPayload payload;
     payload.installAutomatically = installAutomatically;
+    payload.installSilently = installSilently;
     uit.App().SendMsg(MSG_NO_UPDATE_FOUND, &payload);
 }
 
 
 /*static*/
-void UI::NotifyUpdateAvailable(const Appcast& info, bool installAutomatically)
+void UI::NotifyUpdateAvailable(const Appcast& info, bool installAutomatically, bool installSilently)
 {
-    ApplicationController::NotifyUpdateFound();
+    ApplicationController::NotifyUpdateFound(info.ShortVersionString);
 
     UIThreadAccess uit;
     EventPayload payload;
     payload.appcast = info;
     payload.installAutomatically = installAutomatically;
+    payload.installSilently = installSilently;
     uit.App().SendMsg(MSG_UPDATE_AVAILABLE, &payload);
 }
 
@@ -1537,6 +1581,14 @@ void UI::ShowCheckingUpdates()
 {
     UIThreadAccess uit;
     uit.App().SendMsg(MSG_SHOW_CHECKING_UPDATES);
+}
+
+
+/*static*/
+void UI::ResumeUpdate()
+{
+    UIThreadAccess uit;
+    uit.App().SendMsg(MSG_RESUME_UPDATE);
 }
 
 

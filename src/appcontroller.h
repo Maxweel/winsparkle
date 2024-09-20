@@ -45,7 +45,7 @@ public:
     //@{
 
     /// Ask the application if it is ready to terminate itself.
-    static bool IsReadyToShutdown();
+    static bool IsReadyToShutdown(bool isSilentUpdate);
 
     /// Tell the host to terminate.
     static void RequestShutdown();
@@ -61,7 +61,7 @@ public:
     static void NotifyUpdateError();
 
     /// Notify that an update has been found.
-    static void NotifyUpdateFound();
+    static void NotifyUpdateFound(std::string version);
 
     /// Notify that an update has not been found.
     static void NotifyUpdateNotFound();
